@@ -1,35 +1,127 @@
 #include <verilated.h>
 #include <verilated_vcd_c.h>
-#include "Vstrategy.h"
+
+#include "Vitch_stream_parser.h"
+
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace {
+
+std::vector<unsigned char> read_binary_file(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("Could not open input file: " + path);
+    }
+
+    return std::vector<unsigned char>(std::istreambuf_iterator<char>(file), {});
+}
+
+bool ends_with(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) {
+        return false;
+    }
+    return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+char message_type_to_char(std::uint8_t value) {
+    return static_cast<char>(value);
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vstrategy* top = new Vstrategy;
-    
-    // Enable tracing for GTKWave
+
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <raw_itch_file>\n";
+        std::cerr << "Hint: decompress Nasdaq .gz samples first, then pass the raw binary file.\n";
+        return 1;
+    }
+
+    std::string input_path = argv[1];
+    if (ends_with(input_path, ".gz")) {
+        std::cerr << "Error: expected a decompressed raw ITCH file, not a .gz archive.\n";
+        return 1;
+    }
+
+    std::vector<unsigned char> data;
+    try {
+        data = read_binary_file(input_path);
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
+
+    Vitch_stream_parser* top = new Vitch_stream_parser;
+
     Verilated::traceEverOn(true);
     VerilatedVcdC* tfp = new VerilatedVcdC;
     top->trace(tfp, 99);
-    tfp->open("hft_waveform.vcd");
+    tfp->open("itch_waveform.vcd");
 
-    // Sample market data (Price ticks)
-    int prices[] = {1050, 1020, 995, 990, 1010};
-    int ticks = sizeof(prices)/sizeof(prices[0]);
+    top->clk = 0;
+    top->rst = 1;
+    top->stream_valid = 0;
+    top->stream_data = 0;
 
-    for (int i = 0; i < 100; i++) {
-        top->clk = !top->clk;
-        if (i % 2 == 0) top->market_price = prices[i/2];
-        
+    auto tick = [&](std::uint64_t cycle) {
+        top->clk = 0;
         top->eval();
-        tfp->dump(i); // Save state for GTKWave
-        
-        if (top->buy_signal) {
-            std::cout << "Order Placed at tick " << i/2 << " for Price: " << top->order_px << std::endl;
-        }
+        tfp->dump(static_cast<double>(cycle * 2));
+
+        top->clk = 1;
+        top->eval();
+        tfp->dump(static_cast<double>(cycle * 2 + 1));
+    };
+
+    std::uint64_t cycle = 0;
+    for (int i = 0; i < 4; ++i) {
+        tick(cycle++);
     }
 
+    top->rst = 0;
+    for (int i = 0; i < 2; ++i) {
+        tick(cycle++);
+    }
+
+    std::uint64_t accepted_messages = 0;
+
+    for (unsigned char byte : data) {
+        top->stream_valid = 1;
+        top->stream_data = byte;
+        tick(cycle++);
+
+        if (top->msg_valid) {
+            ++accepted_messages;
+            char type_char = message_type_to_char(top->msg_type);
+            std::cout << "ITCH message accepted: type='" << type_char << "'"
+                      << " total=" << top->total_messages
+                      << " filtered=" << top->filtered_messages
+                      << " symbol_match=" << static_cast<int>(top->symbol_match)
+                      << '\n';
+        }
+
+        if (top->msg_error) {
+            std::cerr << "Parser error at cycle " << cycle << '\n';
+            break;
+        }
+
+        top->stream_valid = 0;
+    }
+
+    std::cout << "\nSimulation summary\n";
+    std::cout << "  Raw bytes processed: " << data.size() << '\n';
+    std::cout << "  Accepted messages:   " << accepted_messages << '\n';
+    std::cout << "  Parser total count:  " << top->total_messages << '\n';
+    std::cout << "  Filtered count:      " << top->filtered_messages << '\n';
+
     tfp->close();
+    delete tfp;
     delete top;
     return 0;
 }
