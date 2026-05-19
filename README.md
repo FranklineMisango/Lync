@@ -62,6 +62,27 @@ The PCAP replay component reads captured network traffic files — real Nasdaq I
 
 The testbench drives a complete stimulus-response loop: PCAP → ITCH parser → order book → risk engine → OUCH encoder, comparing outputs against a golden C++ reference model. Latency is measured by cycle-counting the delta between a stimulus input timestamp and the resulting OUCH output assertion on the AXI-Stream output bus.
 
+#### Nasdaq sample files
+
+Public sample ITCH 5.0 files are available from Nasdaq's EMI directory at `https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/`. Common filenames include `01302019.NASDAQ_ITCH50.gz` and `07302019.NASDAQ_ITCH50.gz`, with matching `.md5sum` files in the same directory. These files are compressed binary ITCH streams, so the next step is to decompress them before replay or parsing.
+
+To download a sample into this repo, run:
+
+```bash
+python3 tools/fetch_itch_sample.py --file 01302019.NASDAQ_ITCH50.gz --output-dir data/itch
+```
+
+That stores the file under `data/itch/`, prints a SHA-256 digest, and leaves the file ready for `gunzip` plus downstream ITCH replay tooling.
+
+#### Parser integration references
+
+The current ITCH integration now follows the structure of the two public GitHub projects you pointed to:
+
+- [bbalouki/itchcpp](https://github.com/bbalouki/itchcpp) is used as the C++ golden-reference pattern: callback-based parsing, optional type filtering, and order-book reconstruction from a raw binary ITCH stream.
+- [adilsondias-engineer/07-fpga-itch-parser-v5](https://github.com/adilsondias-engineer/07-fpga-itch-parser-v5) is used as the FPGA architecture reference: 9 ITCH 5.0 message types, symbol filtering, and total-vs-filtered counters for symbol-bearing messages.
+
+The Verilator testbench now consumes a raw ITCH file instead of synthetic price ticks, and the RTL harness tracks message type, symbol filtering status, and message counters so you can line it up against the C++ parser reference later.
+
 
 ### 5. AXI-Stream pipeline architecture
 
