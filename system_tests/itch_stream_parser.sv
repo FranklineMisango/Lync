@@ -18,7 +18,8 @@ module itch_stream_parser (
     output logic       system_event_valid,
     output logic [31:0] total_messages,
     output logic [31:0] filtered_messages,
-    output logic       symbol_match
+    output logic       symbol_match,
+    output logic [63:0] stock_symbol
 );
     import itch_symbol_filter_pkg::*;
 
@@ -36,25 +37,19 @@ module itch_stream_parser (
 
     assign stream_ready = 1'b1;
 
-    function automatic logic [15:0] message_payload_length(input logic [7:0] type_char);
-        case (type_char)
-            8'h41: return 36;
-            8'h45: return 31;
-            8'h58: return 23;
-            8'h53: return 12;
-            8'h52: return 39;
-            8'h44: return 19;
-            8'h55: return 35;
-            8'h50: return 44;
-            8'h51: return 40;
-            default: return 0;
-        endcase
-    endfunction
-
     function automatic bit has_symbol_field(input logic [7:0] type_char);
         case (type_char)
             8'h41,
+            8'h46,
+            8'h48,
             8'h52,
+            8'h4B,
+            8'h4A,
+            8'h4E,
+            8'h4F,
+            8'h68,
+            8'h49,
+            8'h4C,
             8'h50,
             8'h51: return 1'b1;
             default: return 1'b0;
@@ -64,9 +59,18 @@ module itch_stream_parser (
     function automatic int symbol_offset(input logic [7:0] type_char);
         case (type_char)
             8'h41: return 24;
+            8'h46: return 24;
+            8'h48: return 11;
             8'h52: return 11;
+            8'h4B: return 11;
+            8'h4A: return 11;
+            8'h4E: return 11;
+            8'h4F: return 11;
+            8'h68: return 11;
+            8'h49: return 28;
+            8'h4C: return 15;
             8'h50: return 24;
-            8'h51: return 11;
+            8'h51: return 19;
             default: return -1;
         endcase
     endfunction
@@ -117,6 +121,7 @@ module itch_stream_parser (
             total_messages         <= 32'd0;
             filtered_messages      <= 32'd0;
             symbol_match           <= 1'b0;
+            stock_symbol           <= 64'd0;
         end else begin
             msg_valid             <= 1'b0;
             msg_error             <= 1'b0;
@@ -172,10 +177,7 @@ module itch_stream_parser (
                         if ((payload_index + 1) == message_length_next) begin
                             total_messages <= total_messages + 1;
                             msg_type       <= type_next;
-
-                            if (message_payload_length(type_next) == 0) begin
-                                msg_error <= 1'b1;
-                            end
+                            stock_symbol   <= symbol_next;
 
                             if (has_symbol_field(type_next)) begin
                                 passes_filter = is_symbol_filtered(symbol_next);
@@ -191,15 +193,24 @@ module itch_stream_parser (
 
                                 case (type_next)
                                     8'h41: add_order_valid       <= 1'b1;
+                                    8'h46: add_order_valid       <= 1'b1;
+                                    8'h48: stock_directory_valid <= 1'b1;
                                     8'h52: stock_directory_valid <= 1'b1;
                                     8'h45: order_executed_valid  <= 1'b1;
+                                    8'h43: order_executed_valid  <= 1'b1;
                                     8'h58: order_cancel_valid    <= 1'b1;
                                     8'h44: order_delete_valid    <= 1'b1;
                                     8'h55: order_replace_valid   <= 1'b1;
                                     8'h50: trade_valid           <= 1'b1;
                                     8'h51: cross_trade_valid     <= 1'b1;
                                     8'h53: system_event_valid    <= 1'b1;
-                                    default: msg_error           <= 1'b1;
+                                    8'h49: system_event_valid    <= 1'b1;
+                                    8'h4B: stock_directory_valid <= 1'b1;
+                                    8'h4A: stock_directory_valid <= 1'b1;
+                                    8'h4E: stock_directory_valid <= 1'b1;
+                                    8'h4F: stock_directory_valid <= 1'b1;
+                                    8'h68: stock_directory_valid <= 1'b1;
+                                    default: msg_error           <= 1'b0;
                                 endcase
                             end
 

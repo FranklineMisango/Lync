@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <iomanip>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,6 +29,19 @@ bool ends_with(const std::string& value, const std::string& suffix) {
     return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+std::string symbol_to_string(std::uint64_t symbol) {
+    std::string text(8, '\0');
+    for (int i = 0; i < 8; ++i) {
+        text[i] = static_cast<char>((symbol >> ((7 - i) * 8)) & 0xFF);
+    }
+
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\0')) {
+        text.pop_back();
+    }
+
+    return text;
+}
+
 char message_type_to_char(std::uint8_t value) {
     return static_cast<char>(value);
 }
@@ -37,13 +51,14 @@ char message_type_to_char(std::uint8_t value) {
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
 
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <raw_itch_file>\n";
+    if (argc < 2 || argc > 3) {
+        std::cerr << "Usage: " << argv[0] << " <raw_itch_file> [ticker]\n";
         std::cerr << "Hint: decompress Nasdaq .gz samples first, then pass the raw binary file.\n";
         return 1;
     }
 
     std::string input_path = argv[1];
+    std::string target_ticker = (argc == 3) ? argv[2] : "AAPL";
     if (ends_with(input_path, ".gz")) {
         std::cerr << "Error: expected a decompressed raw ITCH file, not a .gz archive.\n";
         return 1;
@@ -90,6 +105,7 @@ int main(int argc, char** argv) {
     }
 
     std::uint64_t accepted_messages = 0;
+    std::uint64_t matched_ticker_messages = 0;
 
     for (unsigned char byte : data) {
         top->stream_valid = 1;
@@ -99,11 +115,20 @@ int main(int argc, char** argv) {
         if (top->msg_valid) {
             ++accepted_messages;
             char type_char = message_type_to_char(top->msg_type);
-            std::cout << "ITCH message accepted: type='" << type_char << "'"
-                      << " total=" << top->total_messages
-                      << " filtered=" << top->filtered_messages
-                      << " symbol_match=" << static_cast<int>(top->symbol_match)
-                      << '\n';
+            std::string symbol = symbol_to_string(top->stock_symbol);
+
+            if (symbol == target_ticker) {
+                ++matched_ticker_messages;
+                std::cout << "TICKER HIT: " << target_ticker
+                          << " type='" << type_char << "'"
+                          << " total=" << top->total_messages
+                          << " filtered=" << top->filtered_messages
+                          << " symbol_match=" << static_cast<int>(top->symbol_match)
+                          << '\n';
+            }
+
+            (void)type_char;
+            (void)symbol;
         }
 
         if (top->msg_error) {
@@ -117,6 +142,7 @@ int main(int argc, char** argv) {
     std::cout << "\nSimulation summary\n";
     std::cout << "  Raw bytes processed: " << data.size() << '\n';
     std::cout << "  Accepted messages:   " << accepted_messages << '\n';
+    std::cout << "  Ticker hits (" << target_ticker << "): " << matched_ticker_messages << '\n';
     std::cout << "  Parser total count:  " << top->total_messages << '\n';
     std::cout << "  Filtered count:      " << top->filtered_messages << '\n';
 
