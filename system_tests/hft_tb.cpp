@@ -4,6 +4,7 @@
 #include "Vitch_stream_parser.h"
 
 #include <fstream>
+#include <map>
 #include <iostream>
 #include <iterator>
 #include <iomanip>
@@ -52,13 +53,14 @@ int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
 
     if (argc < 2 || argc > 3) {
-        std::cerr << "Usage: " << argv[0] << " <raw_itch_file> [ticker]\n";
+        std::cerr << "Usage: " << argv[0] << " <raw_itch_file> [ticker|ALL]\n";
         std::cerr << "Hint: decompress Nasdaq .gz samples first, then pass the raw binary file.\n";
         return 1;
     }
 
     std::string input_path = argv[1];
-    std::string target_ticker = (argc == 3) ? argv[2] : "AAPL";
+    std::string target_ticker = (argc == 3) ? argv[2] : "ALL";
+    bool report_all_tickers = (target_ticker == "ALL" || target_ticker == "*");
     if (ends_with(input_path, ".gz")) {
         std::cerr << "Error: expected a decompressed raw ITCH file, not a .gz archive.\n";
         return 1;
@@ -106,6 +108,7 @@ int main(int argc, char** argv) {
 
     std::uint64_t accepted_messages = 0;
     std::uint64_t matched_ticker_messages = 0;
+    std::map<std::string, std::uint64_t> ticker_hits;
 
     for (unsigned char byte : data) {
         top->stream_valid = 1;
@@ -117,7 +120,11 @@ int main(int argc, char** argv) {
             char type_char = message_type_to_char(top->msg_type);
             std::string symbol = symbol_to_string(top->stock_symbol);
 
-            if (symbol == target_ticker) {
+            if (report_all_tickers) {
+                if (!symbol.empty()) {
+                    ++ticker_hits[symbol];
+                }
+            } else if (symbol == target_ticker) {
                 ++matched_ticker_messages;
                 std::cout << "TICKER HIT: " << target_ticker
                           << " type='" << type_char << "'"
@@ -142,7 +149,15 @@ int main(int argc, char** argv) {
     std::cout << "\nSimulation summary\n";
     std::cout << "  Raw bytes processed: " << data.size() << '\n';
     std::cout << "  Accepted messages:   " << accepted_messages << '\n';
-    std::cout << "  Ticker hits (" << target_ticker << "): " << matched_ticker_messages << '\n';
+    if (report_all_tickers) {
+        std::cout << "  Ticker hits (ALL):   " << accepted_messages << '\n';
+        std::cout << "\nPer-ticker summary\n";
+        for (const auto& entry : ticker_hits) {
+            std::cout << "  " << entry.first << ": " << entry.second << '\n';
+        }
+    } else {
+        std::cout << "  Ticker hits (" << target_ticker << "): " << matched_ticker_messages << '\n';
+    }
     std::cout << "  Parser total count:  " << top->total_messages << '\n';
     std::cout << "  Filtered count:      " << top->filtered_messages << '\n';
 

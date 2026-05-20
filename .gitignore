@@ -1,0 +1,5 @@
+data/*.itch
+data/*.gz
+data/itch/
+obj_dir/
+itch_waveform.vcd
