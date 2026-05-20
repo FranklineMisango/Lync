@@ -1,13 +1,13 @@
 module strategy (
-    input clk,
-    input reset,
-    input [15:0] market_price,  // Incoming price from exchange
-    output reg buy_signal,
-    output reg [15:0] order_px
+    input logic clk,
+    input logic reset,
+    input logic [15:0] market_price,  // Incoming price from exchange
+    output logic buy_signal,
+    output logic [15:0] order_px
 );
-    parameter BUY_THRESHOLD = 16'd1000;
+    parameter logic [15:0] BUY_THRESHOLD = 16'd1000;
 
-    always @(posedge clk) begin
+    always_ff @(posedge clk) begin
         if (reset) begin
             buy_signal <= 1'b0;
             order_px   <= 16'b0;

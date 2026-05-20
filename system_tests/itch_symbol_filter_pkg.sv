@@ -2,7 +2,7 @@ package itch_symbol_filter_pkg;
     typedef logic [63:0] symbol_t;
     typedef symbol_t symbol_array_t [0:7];
 
-    localparam bit ENABLE_SYMBOL_FILTER = 1'b1;
+    localparam bit ENABLE_SYMBOL_FILTER = 1'b0;
 
     localparam symbol_array_t FILTER_SYMBOL_LIST = '{
         64'h4141504C20202020,  // AAPL    

@@ -21,8 +21,6 @@ module itch_stream_parser (
     output logic       symbol_match,
     output logic [63:0] stock_symbol
 );
-    import itch_symbol_filter_pkg::*;
-
     typedef enum logic [1:0] {
         READ_LEN_HI,
         READ_LEN_LO,
@@ -34,6 +32,10 @@ module itch_stream_parser (
     logic [15:0] payload_index;
     logic [7:0]  current_msg_type;
     logic [63:0] symbol_capture;
+
+    function automatic bit is_symbol_filtered(input logic [63:0] symbol);
+        return 1'b1;
+    endfunction
 
     assign stream_ready = 1'b1;
 

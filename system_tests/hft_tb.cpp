@@ -1,5 +1,4 @@
 #include <verilated.h>
-#include <verilated_vcd_c.h>
 
 #include "Vitch_stream_parser.h"
 
@@ -76,11 +75,6 @@ int main(int argc, char** argv) {
 
     Vitch_stream_parser* top = new Vitch_stream_parser;
 
-    Verilated::traceEverOn(true);
-    VerilatedVcdC* tfp = new VerilatedVcdC;
-    top->trace(tfp, 99);
-    tfp->open("itch_waveform.vcd");
-
     top->clk = 0;
     top->rst = 1;
     top->stream_valid = 0;
@@ -89,11 +83,9 @@ int main(int argc, char** argv) {
     auto tick = [&](std::uint64_t cycle) {
         top->clk = 0;
         top->eval();
-        tfp->dump(static_cast<double>(cycle * 2));
 
         top->clk = 1;
         top->eval();
-        tfp->dump(static_cast<double>(cycle * 2 + 1));
     };
 
     std::uint64_t cycle = 0;
@@ -150,7 +142,13 @@ int main(int argc, char** argv) {
     std::cout << "  Raw bytes processed: " << data.size() << '\n';
     std::cout << "  Accepted messages:   " << accepted_messages << '\n';
     if (report_all_tickers) {
-        std::cout << "  Ticker hits (ALL):   " << accepted_messages << '\n';
+        std::uint64_t total_ticker_messages = 0;
+        for (const auto& entry : ticker_hits) {
+            total_ticker_messages += entry.second;
+        }
+
+        std::cout << "  Unique tickers:      " << ticker_hits.size() << '\n';
+        std::cout << "  Ticker messages:     " << total_ticker_messages << '\n';
         std::cout << "\nPer-ticker summary\n";
         for (const auto& entry : ticker_hits) {
             std::cout << "  " << entry.first << ": " << entry.second << '\n';
@@ -161,8 +159,6 @@ int main(int argc, char** argv) {
     std::cout << "  Parser total count:  " << top->total_messages << '\n';
     std::cout << "  Filtered count:      " << top->filtered_messages << '\n';
 
-    tfp->close();
-    delete tfp;
     delete top;
     return 0;
 }
