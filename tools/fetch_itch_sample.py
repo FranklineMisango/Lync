@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import pathlib
+import shutil
 import urllib.request
 
 
@@ -28,11 +29,7 @@ def sha256_file(path: pathlib.Path) -> str:
 def download(url: str, output_path: pathlib.Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url) as response, output_path.open("wb") as target:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            target.write(chunk)
+        shutil.copyfileobj(response, target, length=1024 * 1024)
 
 
 def main() -> int:
