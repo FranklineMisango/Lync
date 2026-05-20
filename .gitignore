@@ -1,6 +1,6 @@
 data/*.itch
 data/*.gz
 data/itch/
-obj_dir/
+obj_dir_hft/
 itch_waveform.vcd
 **__pycache__/**
