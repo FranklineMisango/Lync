@@ -1,6 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <verilated.h>
+#include <verilated_fst_c.h>  // For FST waveform dumping (GTKWave)
 #include <iomanip>
 #include <vector>
 #include <cmath>
@@ -9,6 +10,21 @@
 
 // Global Time Context Variable  
 vluint64_t main_time = 0;
+
+// Helper: advance simulation by one clock cycle and dump waveform
+double sc_time_stamp() {
+    return main_time;
+}
+
+void tick(Vhft_top* top, VerilatedFstC* trace, vluint64_t& time) {
+    top->clk = 0;
+    top->eval();
+    trace->dump(time++);
+
+    top->clk = 1;
+    top->eval();
+    trace->dump(time++);
+}
 
 struct FPGALatencyMeasurement {
     uint64_t msg_arrival_cycle;
@@ -20,8 +36,17 @@ struct FPGALatencyMeasurement {
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     
+    // Enable tracing for GTKWave
+    Verilated::traceEverOn(true);
+
     // Instantiate hardware top module
     auto top = std::make_unique<Vhft_top>();
+
+    // Create FST trace file for GTKWave (compact, fast format)
+    auto trace = std::make_unique<VerilatedFstC>();
+    top->trace(trace.get(), 99);  // Trace up to 99 levels of hierarchy
+    trace->open("hft_strategy.fst");
+
     LatencyTracker latency_tracker;
     std::vector<FPGALatencyMeasurement> measurements;
 
@@ -32,10 +57,11 @@ int main(int argc, char** argv) {
     top->ouch_tready = 1; // Downstream network link ready
     
     for (int i = 0; i < 5; ++i) {
-        top->clk = !top->clk; top->eval();
-        top->clk = !top->clk; top->eval();
+        tick(top.get(), trace.get(), main_time);
     }
     top->reset = 0;
+    tick(top.get(), trace.get(), main_time);
+
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "  FPGA Hardware Latency Benchmark (Verilated)" << std::endl;
     std::cout << std::string(60, '=') << "\n" << std::endl;
@@ -66,13 +92,9 @@ int main(int argc, char** argv) {
     uint64_t cycle_counter = 0;
     
     for (const auto& msg : test_messages) {
-        uint64_t msg_arrival_cycle = cycle_counter;
+        uint64_t msg_arrival_cycle = main_time;
         
         // Inject message on clock rising edge
-        top->clk = 0;
-        top->eval();
-        cycle_counter++;
-        
         top->itch_msg_valid   = 1;
         top->itch_msg_type    = msg.type;
         top->itch_msg_locate  = msg.locate;
@@ -81,8 +103,7 @@ int main(int argc, char** argv) {
         top->itch_msg_price   = msg.price;
         top->itch_msg_order_id = msg.order_id;
         
-        top->clk = 1;
-        top->eval();
+        tick(top.get(), trace.get(), main_time);
         cycle_counter++;
         
         // Release message
@@ -93,17 +114,12 @@ int main(int argc, char** argv) {
         bool order_sent = false;
         
         for (int poll = 0; poll < 100; ++poll) {
-            top->clk = 0;
-            top->eval();
-            cycle_counter++;
-            
-            top->clk = 1;
-            top->eval();
+            tick(top.get(), trace.get(), main_time);
             cycle_counter++;
             
             // Check if order was generated on this cycle
             if (top->ouch_tvalid) {
-                order_send_cycle = cycle_counter;
+                order_send_cycle = main_time;
                 order_sent = true;
                 std::cout << "  [✓] Order transmitted" << std::endl;
                 break;
@@ -111,7 +127,7 @@ int main(int argc, char** argv) {
         }
         
         // Calculate latency
-        uint64_t latency_cycles = order_send_cycle - msg_arrival_cycle;
+        uint64_t latency_cycles = (order_send_cycle - msg_arrival_cycle) / 2; // 2 time steps per cycle
         double latency_ns = (double)latency_cycles * 1.0;  // 1 GHz = 1 ns per cycle
         
         FPGALatencyMeasurement meas;
@@ -130,14 +146,13 @@ int main(int argc, char** argv) {
         
         // Add spacing between messages
         for (int spacer = 0; spacer < 10; ++spacer) {
-            top->clk = 0;
-            top->eval();
-            cycle_counter++;
-            top->clk = 1;
-            top->eval();
+            tick(top.get(), trace.get(), main_time);
             cycle_counter++;
         }
     }
+    
+    // Close the trace file before printing results
+    trace->close();
     
     // Print benchmark results
     std::cout << "\n" << std::string(60, '=') << std::endl;
